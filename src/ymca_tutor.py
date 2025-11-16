@@ -38,10 +38,14 @@ for k, img in REF_IMAGES.items():
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 AUDIO_PATH = Path(__file__).resolve().parent.parent / "src"/ "ymca-asl-tutor"/ "data" / "audio" / "ymca.wav"
+AUDIO_PATH_BEGINNER = Path(__file__).resolve().parent.parent / "src"/ "ymca-asl-tutor"/ "data" / "audio" / "slow_ymca.wav"
 mp_hands = mp.solutions.hands
 
 TUTORIAL_ORDER = ["Y", "M", "C", "A"]
-TUTORIAL_THRESHOLD = 0.25 #passing
+TUTORIAL_THRESHOLD = 0.3 #passing
+
+performance_level = "normal"
+SLOW_FACTOR = 1.6
 
 # Fixed order and duration (seconds) for each letter in the YMCA chorus
 CHORUS_TIMING = [
@@ -58,6 +62,8 @@ CHORUS_TIMING = [
 CHORUS_END = 9.1
 ALPHA = 0.75  # bigger = more sensitive
 
+CHORUS_TIMING_BEGINNER = [(label, start * SLOW_FACTOR, end * SLOW_FACTOR) for (label, start, end) in CHORUS_TIMING]
+CHORUS_END_BEGINNER = CHORUS_END * SLOW_FACTOR
 
 
 def extract_hand_vec(hand_landmarks):
@@ -94,17 +100,15 @@ def classify(vec, templates):
     return best_label, score, best_dist
 
 
-def get_expected_label(start_time):
+def get_expected_label(start_time, timing, chorus_end):
     """
     Given the wall-clock start_time of the audio,
     return (expected_label, progress_in_current_window, elapsed).
     """
     elapsed = time.time() - start_time
+    t = elapsed % chorus_end
 
-    # Optionally loop chorus:
-    t = elapsed % CHORUS_END
-
-    for label, t_start, t_end in CHORUS_TIMING:
+    for label, t_start, t_end in timing:
         if t_start <= t < t_end:
             duration = t_end - t_start
             progress = (t - t_start) / duration
@@ -136,8 +140,10 @@ def main():
     per_letter_scores = {label: [] for label in templates.keys()}
 
     wave_obj = sa.WaveObject.from_wave_file(str(AUDIO_PATH))
-    start_time = None
-    playing = False
+    wave_beginner = sa.WaveObject.from_wave_file(str(AUDIO_PATH_BEGINNER))
+    performance_level = "normal"
+    current_wave = wave_obj
+    current_timing = CHORUS_TIMING
 
     print("[INFO] Initial mode: MENU (press T for tutorial, S for performance, Q to quit)")
 
@@ -171,26 +177,70 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
                 cv2.putText(frame, "Q - Quit", (60, 260),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                cv2.putText(frame, "1 - Slow Mode", (60, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.putText(frame, "2 - Normal Mode", (60, 340), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
                 cv2.imshow("YMCA ASL Tutor", frame)
                 key = cv2.waitKey(1) & 0xFF
 
+                if key in [ord("p"), ord("P"), ord("s"), ord("S")]:
+                    mode = "difficulty"
+                    print("[INFO] Choose difficulty: 1 = Slow, 2 = Normal")
+                    # MODE_PERFORMANCE = "normal"
+                    # print("[INFO] Performance mode set to NORMAL.")
                 if key in [ord("q"), ord("Q")]:
                     break
                 if key in [ord("t"), ord("T")]:
                     mode = "tutorial"
                     tutorial_index = 0
                     print("[INFO] Tutorial mode started (Y then M then C then A).")
-                if key in [ord("s"), ord("S")]:
-                    # reset scores and start chorus
+                
+
+            if mode == "difficulty":
+                overlay = frame.copy()
+                cv2.rectangle(overlay, (40, 40), (w - 40, h - 40), (0, 0, 0), -1)
+                frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
+
+                cv2.putText(frame, "Select Difficulty", (60, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 255, 255), 3)
+                cv2.putText(frame, "1 - Beginner (slower)", (60, 180),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                cv2.putText(frame, "2 - Normal", (60, 220),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                cv2.putText(frame, "M - Back to menu   Q - Quit", (60, h - 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+                cv2.imshow("YMCA ASL Tutor", frame)
+                key = cv2.waitKey(1) & 0xFF
+
+                if key in [ord("q"), ord("Q")]:
+                    break
+                if key in [ord("m"), ord("M")]:
+                    mode = "menu"
+                    print("[INFO] Back to menu from difficulty.")
+                if key == ord("1"):
+                    performance_level = "beginner"
+                    current_wave = wave_beginner
+                    current_timing = CHORUS_TIMING_BEGINNER
+                    current_chorus_end = CHORUS_END_BEGINNER
                     per_letter_scores = {label: [] for label in templates.keys()}
-                    play_obj = wave_obj.play()
+                    play_obj = current_wave.play()
                     start_time = time.time()
                     playing = True
                     mode = "performance"
-                    print("[INFO] Performance mode started (chorus playing).")
-                continue  # go to next frame
-
+                    print("[INFO] Beginner performance started.")
+                if key == ord("2"):
+                    performance_level = "normal"
+                    current_wave = wave_obj
+                    current_timing = CHORUS_TIMING
+                    current_chorus_end = CHORUS_END
+                    per_letter_scores = {label: [] for label in templates.keys()}
+                    play_obj = current_wave.play()
+                    start_time = time.time()
+                    playing = True
+                    mode = "performance"
+                    print("[INFO] Normal performance started.")
+                continue
             # ---------- SUMMARY MODE ----------
             if mode == "summary":
                 overlay = frame.copy()
@@ -218,8 +268,13 @@ def main():
                     print("[INFO] Back to menu.")
                 if key in [ord("r"), ord("R")]:
                     per_letter_scores = {label: [] for label in templates.keys()}
-                    play_obj = wave_obj.play()
+                    play_obj = current_wave.play()
                     start_time = time.time()
+                    playing = True
+                    mode = "Performance"
+                    print(f"[INFO] Chprus restarted in {performance_level} mode")
+        
+
                     playing = True
                     mode = "performance"
                     print("[INFO] Chorus restarted from summary.")
@@ -306,22 +361,17 @@ def main():
                     tutorial_index = (tutorial_index + 1) % len(TUTORIAL_ORDER)
                 if key in [ord("b"), ord("B")]:
                     tutorial_index = (tutorial_index - 1) % len(TUTORIAL_ORDER)
-                if key in [ord("s"), ord("S")]:
-                    # Start performance from tutorial
-                    per_letter_scores = {label: [] for label in templates.keys()}
-                    play_obj = wave_obj.play()
-                    start_time = time.time()
-                    playing = True
-                    mode = "performance"
-                    print("[INFO] Performance mode started from tutorial.")
-                continue
+                if key in [ord("p"), ord("P"), ord("s"), ord("S")]:
+                    mode = "difficulty"
+                    print("[INFO] Choose difficulty: 1 = Slow, 2 = Normal")
+        
 
             # ---------- PERFORMANCE MODE ----------
             if mode == "performance":
                 result = hands.process(rgb)
 
                 if playing and start_time is not None:
-                    expected_label, progress, elapsed = get_expected_label(start_time)
+                    expected_label, progress, elapsed = get_expected_label(start_time, current_timing, current_chorus_end)
                 else:
                     expected_label, progress, elapsed = None, 0.0, 0.0
 
@@ -390,8 +440,19 @@ def main():
 
                 # start audio + timing if not already playing
                 if not playing and key in [ord("s"), ord("S")]:
-                    play_obj = wave_obj.play()
-                    start_time = time.time()
+                    per_letter_scores = {label: [] for label in templates.keys()}
+                    if performance_level == "beginner":
+                        play_obj = wave_beginner.play()
+                        start_time = time.time()
+                        current_timing = CHORUS_TIMING_BEGINNER
+                        current_chorus_end = CHORUS_END_BEGINNER
+                    else:
+                        play_obj = wave_obj.play()
+                        start_time = time.time()
+                        current_timing = CHORUS_TIMING
+                        current_chorus_end = CHORUS_END
+                    # play_obj = wave_obj.play()
+                    # start_time = time.time()
                     playing = True
                     print("[INFO] Chorus started")
 
@@ -399,7 +460,7 @@ def main():
                     break
 
                 # chorus finished -> go to summary
-                if playing and elapsed >= CHORUS_END:
+                if playing and elapsed >= current_chorus_end:
                     playing = False
                     mode = "summary"
 
@@ -415,14 +476,14 @@ def main():
                             else:
                                 fb = "Needs practice."
                             summary_lines.append(
-                                f"{label}: {len(scores)} hits, avg {avg:.2f} – {fb}"
+                                f"{label}: {len(scores)} hits, avg {avg:.2f}, {fb}"
                             )
                         else:
                             summary_lines.append(
                                 f"{label}: no confident matches"
                             )
 
-                    print("[INFO] Chorus finished – showing summary.")
+                    print("[INFO] Chorus finished, showing summary.")
 
                 continue  # end performance mode loop
 
