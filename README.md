@@ -1,4 +1,4 @@
-#SignAlong: AI-Powered ASL Music Tutor
+# SignAlong: AI-Powered ASL Music Tutor
 
 SignAlong: Learn ASL Through Music
 Where Machine Learning and Computer Vision meet rhythm, gesture, and human expression.
