@@ -51,30 +51,22 @@ Optional facial-expression expansions
 
 
 
-🕹️ How to Use
+How to Use
 1. Install dependencies
 pip install mediapipe==0.10.21 sounddevice simpleaudio opencv-python numpy
 
 2. Capture Templates Before Playing
 
-Run:
-
-python capture_templates.py
-
+Run: python capture_templates.py
 
 Choose the song → perform each sign → templates will be saved automatically.
-
-3. Run the Main App
-python main.py
+ 3. run ymca_tutor.py
 
 🎤 Supported Songs
 1. YMCA
 
 Signs: Y, M, C, A
-
-Static letters
-
-Great for beginners
+(Static letters, Great for beginners)
 
 2. Love You Like a Love Song (LYLLS)
 
